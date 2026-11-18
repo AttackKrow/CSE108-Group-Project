@@ -89,7 +89,7 @@ function renderLogin() {
   topbarEl.classList.add("hidden");
   appEl.innerHTML = `
     <form id="login-form" class="card login-card" novalidate>
-      <h1>UC Merced</h1>
+      <h1>ACME University</h1>
       <div class="form-row">
         <label for="username">Username</label>
         <input id="username" name="username" autocomplete="username" required>
