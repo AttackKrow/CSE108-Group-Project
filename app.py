@@ -4,6 +4,7 @@ import os
 from flask import Flask, jsonify, redirect, request, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin, AdminIndexView, expose
+from flask_admin.menu import MenuLink
 from flask_admin.contrib.sqla import ModelView
 from sqlalchemy import (
     CheckConstraint,
@@ -415,6 +416,13 @@ admin = Admin(app, name="ACME University Admin", index_view=SecureAdminIndexView
 admin.add_view(SecureModelView(User, db.session))
 admin.add_view(SecureModelView(Course, db.session))
 admin.add_view(SecureModelView(Enrollment, db.session))
+admin.add_link(MenuLink(name="Sign out", url="/admin/logout"))
+
+
+@app.get("/admin/logout")
+def admin_logout():
+    session.clear()
+    return redirect("/")
 
 
 if __name__ == "__main__":
