@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <section class="panel">
+        <nav class="tabs">
+            <a class="active" href="#enrolled">Your Courses</a>
+            <a href="#available">Add Courses</a>
+        </nav>
+        <section id="enrolled" class="table-wrap">
+            <h2>Your Courses</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Course Name</th>
+                        <th>Teacher</th>
+                        <th>Time</th>
+                        <th>Students Enrolled</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in enrolled %}
+                        <tr>
+                            <td>{{ c.name }}</td>
+                            <td>{{ c.teacher.display_name }}</td>
+                            <td>{{ c.time }}</td>
+                            <td>{{ c.enrolled_count }}/{{ c.capacity }}</td>
+                            <td>
+                                <form method="post" action="{{ url_for('drop_course', course_id=c.id) }}">
+                                    <button class="danger" type="submit">Drop</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="5">You are not enrolled in any courses yet.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        <section id="available" class="table-wrap">
+            <h2>All Courses Offered</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Course Name</th>
+                        <th>Teacher</th>
+                        <th>Time</th>
+                        <th>Students Enrolled</th>
+                        <th>Add class</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in courses %}
+                        <tr>
+                            <td>{{ c.name }}</td>
+                            <td>{{ c.teacher.display_name }}</td>
+                            <td>{{ c.time }}</td>
+                            <td>{{ c.enrolled_count }}/{{ c.capacity }}</td>
+                            <td>
+                                {% if c.id not in enrolled|map(attribute='id')|list and not c.is_full %}
+                                    <form method="post" action="{{ url_for('enroll', course_id=c.id) }}">
+                                        <button class="add" title="Enroll in {{ c.name }}" type="submit">+</button>
+                                    </form>
+                                {% elif c.id in enrolled|map(attribute='id')|list %}
+                                    <span class="muted">Enrolled</span>
+                                {% else %}
+                                    <span class="muted">Full</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    </section>
+{% endblock %}

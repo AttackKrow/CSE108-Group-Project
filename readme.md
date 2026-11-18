@@ -1,12 +1,14 @@
-# CSE 108 Lab 8 — Student Enrollment Web App (Database & Seed Layer)
+# CSE 108 — ACME University Enrollment App
 
-This project implements the Flask + SQLAlchemy ORM database schema, enrollment/grade helper functions, and CSV database seeding for the CSE 108 Student Enrollment Web App.
+Flask app for ACME University course enrollment. Students can view offered and enrolled courses, enroll and drop; teachers can review their rosters and edit grades; admins get CRUD access to users, courses, and enrollments through Flask-Admin.
 
 ## Project Structure
 
 ```text
 CSE108-Group-Project/
-├── app.py                # Flask app, SQLAlchemy models, enrollment/grade helpers, init_db()
+├── app.py                # Flask app, SQLAlchemy models, views, enrollment/grade helpers
+├── templates/            # Login, student, teacher and roster pages
+├── static/style.css      # Responsive ACME University styling
 ├── seed/
 │   ├── seed.py           # CSV seeder script and seed_db() helper
 │   └── seed_data.csv     # Course, teacher, student, and grade workbook data
@@ -24,7 +26,7 @@ Create a virtual environment named `baseenv` from the repository root and instal
 ```bash
 python3 -m venv baseenv
 source baseenv/bin/activate
-pip install Flask Flask-SQLAlchemy
+pip install -r requirements.txt
 ```
 
 On Windows (PowerShell):
@@ -32,7 +34,7 @@ On Windows (PowerShell):
 ```powershell
 python -m venv baseenv
 .\baseenv\Scripts\Activate.ps1
-pip install Flask Flask-SQLAlchemy
+pip install -r requirements.txt
 ```
 
 > All commands below assume `baseenv` is activated (or can be run directly using `./baseenv/bin/python`).
@@ -66,7 +68,20 @@ This calls `init_db()`, which creates `users`, `courses`, and `enrollments` in `
 
 ---
 
-## 3. Using the Current Database Functionality
+Demo accounts use password **`password123`**. Seed data includes `admin`, teacher usernames such as `ahepworth`, and student usernames such as `mnorris`.
+
+## 3. Run the Web App
+
+Set a persistent secret key before deployment, then run the Flask server:
+
+```bash
+export FLASK_SECRET_KEY="use-a-long-random-value"
+python app.py
+```
+
+Open `http://127.0.0.1:5000`. Seed the database first to create demo accounts. The admin dashboard is at `/admin` and requires an admin login. Teacher course names open their roster. Grades accept values from 0 to 100.
+
+## 4. Database Functionality
 
 ### Database Models (`app.py`)
 
@@ -128,7 +143,7 @@ with app.app_context():
 
 ---
 
-## 4. Seeded Data Reference
+## 5. Seeded Data Reference
 
 ### Demo Accounts
 
