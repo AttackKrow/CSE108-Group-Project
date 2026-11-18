@@ -1,29 +1,38 @@
-# CSE 108 — ACME University Enrollment App
+# CSE 108 — Course Enrollment App
 
-Flask app for ACME University course enrollment. Students can view offered and enrolled courses, enroll and drop; teachers can review their rosters and edit grades; admins get CRUD access to users, courses, and enrollments through Flask-Admin.
+A full-stack course enrollment web application built with Flask, SQLite (Flask-SQLAlchemy), Flask-Admin, and a single-page HTML/CSS/JavaScript frontend.
+
+## Features
+
+- **Students:** View enrolled courses, browse available courses with live seat counts, and enroll in or drop courses.
+- **Teachers:** View assigned courses, inspect class rosters, and enter or update student grades (`0–100`).
+- **Admins:** Create, edit, and delete users, courses, and enrollments through the Flask-Admin dashboard at `/admin`.
 
 ## Project Structure
 
 ```text
 CSE108-Group-Project/
-├── app.py                # Flask app, SQLAlchemy models, views, enrollment/grade helpers
+├── app.py                  # Flask server, SQLAlchemy models, REST API, and Flask-Admin setup
+├── requirements.txt        # Python dependencies
 ├── static/
-│   ├── index.html        # Single-page app shell
-│   ├── css/styles.css    # Responsive interface styles
-│   └── js/               # Frontend, API client and optional mock data
+│   ├── index.html          # Single-page frontend shell
+│   ├── css/styles.css      # Application styles
+│   └── js/
+│       ├── app.js          # Frontend views and UI logic
+│       ├── api.js          # Fetch client for /api/* endpoints
+│       └── mock.js         # Optional standalone mock mode data
 ├── seed/
-│   ├── seed.py           # CSV seeder script and seed_db() helper
-│   └── seed_data.csv     # Course, teacher, student, and grade workbook data
-├── instance/
-│   └── enrollment.db     # SQLite database (created/populated when running app.py or seed.py)
-└── readme                # Project setup and usage documentation
+│   ├── seed.py             # Database seeder script
+│   └── seed_data.csv       # Initial course, teacher, student, and grade data
+└── instance/
+    └── enrollment.db       # SQLite database (auto-created on seed or startup)
 ```
 
----
+## Getting Started
 
-## 1. Create and Activate the Python Environment
+### 1. Set Up the Environment
 
-Create a virtual environment named `baseenv` from the repository root and install the required packages (`Flask` and `Flask-SQLAlchemy`, which also installs `SQLAlchemy` and `Werkzeug`):
+Create and activate a virtual environment, then install the dependencies:
 
 ```bash
 python3 -m venv baseenv
@@ -39,141 +48,55 @@ python -m venv baseenv
 pip install -r requirements.txt
 ```
 
-> All commands below assume `baseenv` is activated (or can be run directly using `./baseenv/bin/python`).
+### 2. Seed the Database
 
----
-
-## 2. Initialize or Seed the Database
-
-### Option A: Seed the database with sample data (Recommended)
-
-Run the seeder script from the project root (or from inside `seed/`):
+Populate `instance/enrollment.db` with the sample courses, teachers, students, and grades from `seed/seed_data.csv`:
 
 ```bash
 python seed/seed.py
 ```
 
-This executes `seed_db(reset=True)`, which:
-1. Drops and recreates all tables in `instance/enrollment.db`.
-2. Reads `seed/seed_data.csv` (carrying course fields forward per block, skipping blank separator rows, and trimming whitespace from names).
-3. Creates the demo admin, teachers, students, courses, and enrollments with hashed passwords.
-
-### Option B: Create empty tables only
-
-If you want to initialize the database schema without inserting any seed data:
+### 3. Run the Application
 
 ```bash
 python app.py
 ```
 
-This calls `init_db()`, which creates `users`, `courses`, and `enrollments` in `instance/enrollment.db` if they do not already exist.
+Open `http://127.0.0.1:5000` in your browser.
 
----
+## Demo Accounts
 
-Demo accounts use password **`password123`**. Seed data includes `admin`, teacher usernames such as `ahepworth`, and student usernames such as `mnorris`.
+All seeded accounts use the password **`password123`**.
 
-## 3. Run the Web App
+| Role | Display Name | Username |
+| :--- | :--- | :--- |
+| Admin | Admin | `admin` |
+| Teacher | Ralph Jenkins | `rjenkins` |
+| Teacher | Susan Walker | `swalker` |
+| Teacher | Ammon Hepworth | `ahepworth` |
+| Teacher | Santosh Chandrasekhar | `schandrasekhar` |
+| Student | Jose Santos | `jsantos` |
+| Student | Betty Brown | `bbrown` |
+| Student | John Stuart | `jstuart` |
+| Student | Li Cheng | `lcheng` |
+| Student | Nancy Little | `nlittle` |
+| Student | Mindy Norris | `mnorris` |
+| Student | Aditya Ranganath | `aranganath` |
+| Student | Yi Wen Chen | `ychen` |
+| Student | Nicholas Force | `nforce` |
 
-Set a persistent secret key before deployment, then run the Flask server:
+## API Overview
 
-```bash
-export FLASK_SECRET_KEY="use-a-long-random-value"
-python app.py
-```
-
-Open `http://127.0.0.1:5000`. The browser interface uses the JSON endpoints in `app.py`; the admin dashboard is at `/admin` and requires an admin login. Teacher course names open their roster. Grades accept values from 0 to 100.
-
-## 4. Database Functionality
-
-### Database Models (`app.py`)
-
-- **`User`** (`users` table)
-  - Columns: `id`, `username` (unique), `password_hash`, `role` (`'student'`, `'teacher'`, or `'admin'`), `display_name`
-  - Relationships: `courses_taught`, `enrollments`
-  - Methods: `set_password(password)`, `check_password(password)`
-  - Automatically trims surrounding whitespace from `username` and `display_name`.
-
-- **`Course`** (`courses` table)
-  - Columns: `id`, `name` (unique), `teacher_id`, `time`, `capacity` (`> 0`)
-  - Relationships: `teacher`, `enrollments`
-  - Derived properties (computed from `enrollments`):
-    - `enrolled_count` (`int`)
-    - `is_full` (`bool`)
-    - `seats_remaining` (`int`)
-
-- **`Enrollment`** (`enrollments` table)
-  - Columns: `id`, `student_id`, `course_id`, `grade` (`float | None`)
-  - Constraint: `UniqueConstraint("student_id", "course_id")` prevents duplicate enrollment in the same course and stores a course-specific grade per student.
-  - Relationships: `student`, `course`
-
-### Helper Functions
-
-All database queries and mutations run inside `app.app_context()`:
-
-```python
-from app import Course, Enrollment, User, app, db, enroll_student, init_db, update_grade
-from seed.seed import seed_db
-
-# Initialize tables without clearing data
-init_db()
-
-# Re-seed without wiping existing records (updates grades / adds missing rows)
-seed_db(reset=False)
-
-# Or seed from a custom CSV file and reset tables first
-# seed_db(csv_path="path/to/custom.csv", reset=True)
-
-with app.app_context():
-    # Look up a student and a course
-    student = User.query.filter_by(username="jsantos").one()
-    course = Course.query.filter_by(name="CS 106").one()
-
-    # Verify a user's password
-    valid = student.check_password("password123")
-
-    # Check course availability
-    print(f"{course.name}: {course.enrolled_count}/{course.capacity} (full={course.is_full})")
-
-    # Enroll a student (rejects duplicates and full courses)
-    ok, message = enroll_student(student.id, course.id)
-    print(ok, message)
-
-    # Update a student's grade in a specific course (other courses remain unchanged)
-    ok, message = update_grade(student.id, course.id, 95.0)
-    print(ok, message)
-```
-
----
-
-## 5. Seeded Data Reference
-
-### Demo Accounts
-
-All seeded accounts use the default password **`password123`** (stored as a Werkzeug password hash).
-
-| Role | Display Name | Username | Password |
+| Method | Endpoint | Role | Description |
 | :--- | :--- | :--- | :--- |
-| Admin | Admin | `admin` | `password123` |
-| Teacher | Ralph Jenkins | `rjenkins` | `password123` |
-| Teacher | Susan Walker | `swalker` | `password123` |
-| Teacher | Ammon Hepworth | `ahepworth` | `password123` |
-| Teacher | Santosh Chandrasekhar | `schandrasekhar` | `password123` |
-| Student | Jose Santos | `jsantos` | `password123` |
-| Student | Betty Brown | `bbrown` | `password123` |
-| Student | John Stuart | `jstuart` | `password123` |
-| Student | Li Cheng | `lcheng` | `password123` |
-| Student | Nancy Little | `nlittle` | `password123` |
-| Student | Mindy Norris | `mnorris` | `password123` |
-| Student | Aditya Ranganath | `aranganath` | `password123` |
-| Student | Yi Wen Chen | `ychen` | `password123` |
-| Student | Nicholas Force | `nforce` | `password123` |
-
-### Seeded Courses
-
-| Course | Teacher | Meeting Time | Enrolled / Capacity | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| `Math 101` | Ralph Jenkins | `MWF 10:00-10:50 AM` | `4 / 8` | Open |
-| `Physics 121` | Susan Walker | `TR 11:00-11:50 AM` | `5 / 10` | Open |
-| `CS 106` | Ammon Hepworth | `MWF 2:00-2:50 PM` | `4 / 10` | Open |
-| `CS 162` | Ammon Hepworth | `TR 3:00-3:50 PM` | `4 / 4` | Full |
-| `CSE 120` | Santosh Chandrasekhar | `W 4:30-7:20 PM` | `1 / 120` | Open |
+| `POST` | `/api/login` | Public | Sign in with `username` and `password` |
+| `POST` | `/api/logout` | Any | Sign out of the current session |
+| `GET` | `/api/me` | Any | Get the currently signed-in user |
+| `GET` | `/api/courses` | Any | List all courses and enrollment counts |
+| `GET` | `/api/student/courses` | Student | List courses the student is enrolled in |
+| `POST` | `/api/student/courses/<id>` | Student | Enroll in a course |
+| `DELETE` | `/api/student/courses/<id>` | Student | Drop a course |
+| `GET` | `/api/teacher/courses` | Teacher | List courses taught by the teacher |
+| `GET` | `/api/teacher/courses/<id>` | Teacher | View course details and student roster |
+| `PUT` | `/api/teacher/courses/<id>/students/<sid>` | Teacher | Update a student's grade (`0–100` or `null`) |
+| `GET` | `/admin` | Admin | Flask-Admin management interface |
