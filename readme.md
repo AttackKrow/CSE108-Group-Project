@@ -7,8 +7,10 @@ Flask app for ACME University course enrollment. Students can view offered and e
 ```text
 CSE108-Group-Project/
 ├── app.py                # Flask app, SQLAlchemy models, views, enrollment/grade helpers
-├── templates/            # Login, student, teacher and roster pages
-├── static/style.css      # Responsive ACME University styling
+├── static/
+│   ├── index.html        # Single-page app shell
+│   ├── css/styles.css    # Responsive interface styles
+│   └── js/               # Frontend, API client and optional mock data
 ├── seed/
 │   ├── seed.py           # CSV seeder script and seed_db() helper
 │   └── seed_data.csv     # Course, teacher, student, and grade workbook data
@@ -79,7 +81,7 @@ export FLASK_SECRET_KEY="use-a-long-random-value"
 python app.py
 ```
 
-Open `http://127.0.0.1:5000`. Seed the database first to create demo accounts. The admin dashboard is at `/admin` and requires an admin login. Teacher course names open their roster. Grades accept values from 0 to 100.
+Open `http://127.0.0.1:5000`. The browser interface uses the JSON endpoints in `app.py`; the admin dashboard is at `/admin` and requires an admin login. Teacher course names open their roster. Grades accept values from 0 to 100.
 
 ## 4. Database Functionality
 

@@ -1,8 +1,7 @@
 from typing import Optional
 
-from functools import wraps
 import os
-from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, request, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin, AdminIndexView, expose
 from flask_admin.contrib.sqla import ModelView
@@ -18,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path="")
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me")
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///enrollment.db"
@@ -29,20 +28,6 @@ db = SQLAlchemy(app)
 def current_user():
     user_id = session.get("user_id")
     return db.session.get(User, user_id) if user_id else None
-
-
-def login_required(*roles):
-    def decorator(view):
-        @wraps(view)
-        def wrapped(*args, **kwargs):
-            user = current_user()
-            if user is None:
-                return redirect(url_for("login", next=request.path))
-            if roles and user.role not in roles:
-                abort(403)
-            return view(*args, **kwargs)
-        return wrapped
-    return decorator
 
 
 class User(db.Model):
@@ -233,93 +218,179 @@ def init_db() -> None:
         db.create_all()
 
 
-@app.context_processor
-def inject_user():
-    return {"current_user": current_user()}
-
-
 @app.route("/")
 def index():
-    if current_user():
-        return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
+    return send_from_directory("static", "index.html")
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        user = User.query.filter_by(username=username).first()
-        if user and user.check_password(password):
-            session.clear()
-            session["user_id"] = user.id
-            destination = request.args.get("next")
-            if destination and destination.startswith("/") and not destination.startswith("//"):
-                return redirect(destination)
-            return redirect(url_for("dashboard"))
-        flash("Invalid username or password.", "error")
-    return render_template("login.html")
+def api_error(message: str, status: int):
+    return jsonify(error=message), status
 
 
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
+def api_user(user: User) -> dict:
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "display_name": user.display_name,
+    }
 
 
-@app.route("/dashboard")
-@login_required("student", "teacher", "admin")
-def dashboard():
+def api_course(course: Course, student_id: Optional[int] = None) -> dict:
+    data = {
+        "id": course.id,
+        "name": course.name,
+        "teacher": course.teacher.display_name,
+        "time": course.time,
+        "enrolled": course.enrolled_count,
+        "capacity": course.capacity,
+    }
+    if student_id is not None:
+        data["is_enrolled"] = Enrollment.query.filter_by(
+            student_id=student_id,
+            course_id=course.id,
+        ).first() is not None
+    return data
+
+
+def require_api_role(role: Optional[str] = None):
     user = current_user()
-    if user.role == "teacher":
-        courses = Course.query.filter_by(teacher_id=user.id).order_by(Course.name).all()
-        return render_template("teacher.html", courses=courses)
-    if user.role == "admin":
-        return redirect(url_for("admin.index"))
-    enrolled_ids = db.session.query(Enrollment.course_id).filter_by(student_id=user.id)
-    enrolled = Course.query.filter(Course.id.in_(enrolled_ids)).order_by(Course.name).all()
-    available = Course.query.order_by(Course.name).all()
-    return render_template("student.html", enrolled=enrolled, courses=available)
+    if user is None:
+        return None, api_error("Not logged in", 401)
+    if role and user.role != role:
+        return None, api_error("Forbidden", 403)
+    return user, None
 
 
-@app.post("/courses/<int:course_id>/enroll")
-@login_required("student")
-def enroll(course_id):
-    ok, message = enroll_student(current_user().id, course_id)
-    flash(message, "success" if ok else "error")
-    return redirect(url_for("dashboard"))
+@app.post("/api/login")
+def api_login():
+    data = request.get_json(silent=True) or {}
+    user = User.query.filter_by(username=(data.get("username") or "").strip()).first()
+    if not user or not user.check_password(data.get("password") or ""):
+        return api_error("Invalid username or password", 401)
+    session.clear()
+    session["user_id"] = user.id
+    return jsonify(api_user(user))
 
 
-@app.post("/courses/<int:course_id>/drop")
-@login_required("student")
-def drop_course(course_id):
-    enrollment = Enrollment.query.filter_by(student_id=current_user().id, course_id=course_id).first()
-    if enrollment:
-        db.session.delete(enrollment)
-        db.session.commit()
-        flash("Course dropped.", "success")
-    else:
-        flash("You are not enrolled in that course.", "error")
-    return redirect(url_for("dashboard"))
+@app.post("/api/logout")
+def api_logout():
+    session.clear()
+    return jsonify(ok=True)
 
 
-@app.route("/courses/<int:course_id>", methods=["GET", "POST"])
-@login_required("teacher")
-def course_roster(course_id):
-    course = Course.query.filter_by(id=course_id, teacher_id=current_user().id).first_or_404()
-    if request.method == "POST":
+@app.get("/api/me")
+def api_me():
+    user, error = require_api_role()
+    if error:
+        return error
+    return jsonify(api_user(user))
+
+
+@app.get("/api/student/courses")
+def api_student_courses():
+    user, error = require_api_role("student")
+    if error:
+        return error
+    courses = Course.query.join(Enrollment).filter(
+        Enrollment.student_id == user.id
+    ).order_by(Course.name).all()
+    return jsonify([api_course(course) for course in courses])
+
+
+@app.get("/api/courses")
+def api_courses():
+    user, error = require_api_role()
+    if error:
+        return error
+    courses = Course.query.order_by(Course.name).all()
+    student_id = user.id if user.role == "student" else None
+    return jsonify([api_course(course, student_id) for course in courses])
+
+
+@app.post("/api/student/courses/<int:course_id>")
+def api_enroll(course_id: int):
+    user, error = require_api_role("student")
+    if error:
+        return error
+    ok, message = enroll_student(user.id, course_id)
+    if not ok:
+        status = 404 if message == "Course not found." else 409
+        return api_error(message, status)
+    return jsonify(api_course(db.session.get(Course, course_id), user.id))
+
+
+@app.delete("/api/student/courses/<int:course_id>")
+def api_drop(course_id: int):
+    user, error = require_api_role("student")
+    if error:
+        return error
+    enrollment = Enrollment.query.filter_by(
+        student_id=user.id,
+        course_id=course_id,
+    ).first()
+    if enrollment is None:
+        return api_error("You are not enrolled in that course", 404)
+    db.session.delete(enrollment)
+    db.session.commit()
+    return jsonify(api_course(db.session.get(Course, course_id), user.id))
+
+
+@app.get("/api/teacher/courses")
+def api_teacher_courses():
+    user, error = require_api_role("teacher")
+    if error:
+        return error
+    courses = Course.query.filter_by(teacher_id=user.id).order_by(Course.name).all()
+    return jsonify([api_course(course) for course in courses])
+
+
+@app.get("/api/teacher/courses/<int:course_id>")
+def api_teacher_roster(course_id: int):
+    user, error = require_api_role("teacher")
+    if error:
+        return error
+    course = Course.query.filter_by(id=course_id, teacher_id=user.id).first()
+    if course is None:
+        return api_error("Course not found", 404)
+    enrollments = Enrollment.query.filter_by(course_id=course.id).join(User).order_by(
+        User.display_name
+    ).all()
+    students = [
+        {"student_id": enrollment.student_id,
+         "name": enrollment.student.display_name,
+         "grade": enrollment.grade}
+        for enrollment in enrollments
+    ]
+    return jsonify(course=api_course(course), students=students)
+
+
+@app.put("/api/teacher/courses/<int:course_id>/students/<int:student_id>")
+def api_set_grade(course_id: int, student_id: int):
+    user, error = require_api_role("teacher")
+    if error:
+        return error
+    course = Course.query.filter_by(id=course_id, teacher_id=user.id).first()
+    if course is None:
+        return api_error("Course not found", 404)
+    data = request.get_json(silent=True) or {}
+    grade = data.get("grade")
+    if grade is not None:
         try:
-            grade = float(request.form["grade"])
-            if not 0 <= grade <= 100:
-                raise ValueError
-            ok, message = update_grade(int(request.form["student_id"]), course.id, grade)
-            flash(message, "success" if ok else "error")
-        except (KeyError, ValueError):
-            flash("Enter a grade from 0 to 100.", "error")
-        return redirect(url_for("course_roster", course_id=course.id))
-    enrollments = Enrollment.query.filter_by(course_id=course.id).join(User).order_by(User.display_name).all()
-    return render_template("roster.html", course=course, enrollments=enrollments)
+            grade = float(grade)
+        except (TypeError, ValueError):
+            return api_error("Grade must be a number from 0 to 100", 400)
+        if not 0 <= grade <= 100:
+            return api_error("Grade must be a number from 0 to 100", 400)
+    enrollment = Enrollment.query.filter_by(
+        student_id=student_id,
+        course_id=course.id,
+    ).first()
+    if enrollment is None:
+        return api_error("Student is not enrolled in this course", 404)
+    enrollment.grade = grade
+    db.session.commit()
+    return jsonify(student_id=student_id, course_id=course.id, grade=grade)
 
 
 class SecureAdminIndexView(AdminIndexView):
@@ -327,7 +398,7 @@ class SecureAdminIndexView(AdminIndexView):
     def index(self):
         user = current_user()
         if not user or user.role != "admin":
-            return redirect(url_for("login"))
+            return redirect("/")
         return super().index()
 
 
@@ -337,7 +408,7 @@ class SecureModelView(ModelView):
         return bool(user and user.role == "admin")
 
     def inaccessible_callback(self, name, **kwargs):
-        return redirect(url_for("login"))
+        return redirect("/")
 
 
 admin = Admin(app, name="ACME University Admin", index_view=SecureAdminIndexView(), url="/admin")
